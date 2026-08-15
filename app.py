@@ -118,7 +118,21 @@ except Exception as e:
 
 
 # ============================================================
+# ACTIVE TRAFFIC DATA
+# ============================================================
+# After incident simulation, ALL dashboard sections use the
+# simulated dataframe. Otherwise they use the original data.
+
+active_df = st.session_state.get(
+    "simulated_df",
+    df
+).copy()
+
+
+# ============================================================
 # REQUIRED COLUMN CHECK
+# ============================================================
+
 # ============================================================
 
 required_columns = [
@@ -170,13 +184,13 @@ st.sidebar.divider()
 st.sidebar.subheader("📊 Dataset Information")
 
 st.sidebar.write(
-    f"Locations: **{len(df)}**"
+    f"Locations: **{len(active_df)}**"
 )
 
-if "risk_score" in df.columns:
+if "risk_score" in active_df.columns:
 
     st.sidebar.write(
-        f"Average Risk: **{df['risk_score'].mean():.2f}**"
+        f"Average Risk: **{active_df['risk_score'].mean():.2f}**"
     )
 
 
@@ -184,13 +198,13 @@ if "risk_score" in df.columns:
 # KPI CALCULATIONS
 # ============================================================
 
-total_locations = len(df)
+total_locations = len(active_df)
 
-if "risk_score" in df.columns:
+if "risk_score" in active_df.columns:
 
-    average_risk = df["risk_score"].mean()
+    average_risk = active_df["risk_score"].mean()
 
-    highest_risk = df["risk_score"].max()
+    highest_risk = active_df["risk_score"].max()
 
 else:
 
@@ -198,21 +212,21 @@ else:
     highest_risk = 0
 
 
-if "risk_level" in df.columns:
+if "risk_level" in active_df.columns:
 
     risk_levels = (
-        df["risk_level"]
+        active_df["risk_level"]
         .astype(str)
         .str.upper()
     )
 
-    critical_count = (
-        risk_levels == "CRITICAL"
-    ).sum()
+    critical_count = int(
+        (risk_levels == "CRITICAL").sum()
+    )
 
-    high_count = (
-        risk_levels == "HIGH"
-    ).sum()
+    high_count = int(
+        (risk_levels == "HIGH").sum()
+    )
 
 else:
 
@@ -223,10 +237,10 @@ else:
 # OPERATIONAL KPI CALCULATIONS
 # ============================================================
 
-if "current_incidents" in df.columns:
+if "current_incidents" in active_df.columns:
 
     active_incidents = int(
-        (df["current_incidents"] > 0).sum()
+        (active_df["current_incidents"] > 0).sum()
     )
 
 else:
@@ -377,11 +391,11 @@ st.divider()
 
 st.subheader("🚦 Operational Traffic Status")
 
-if "traffic_density" in df.columns:
+if "traffic_density" in active_df.columns:
 
-    average_density = df["traffic_density"].mean()
+    average_density = active_df["traffic_density"].mean()
 
-    maximum_density = df["traffic_density"].max()
+    maximum_density = active_df["traffic_density"].max()
 
 else:
 
@@ -391,7 +405,7 @@ else:
 
 if "peak_activity" in df.columns:
 
-    average_peak_activity = df["peak_activity"].mean()
+    average_peak_activity = active_df["peak_activity"].mean()
 
 else:
 
@@ -431,10 +445,10 @@ st.divider()
 
 st.subheader("📊 Traffic Risk Distribution")
 
-if "risk_level" in df.columns:
+if "risk_level" in active_df.columns:
 
     risk_distribution = (
-        df["risk_level"]
+        active_df["risk_level"]
         .astype(str)
         .str.upper()
         .value_counts()
@@ -514,8 +528,8 @@ st.divider()
 st.subheader("🚨 Highest Traffic Risk Locations")
 
 if (
-    "risk_score" in df.columns
-    and "location" in df.columns
+    "risk_score" in active_df.columns
+    and "location" in active_df.columns
 ):
 
     # --------------------------------------------------------
@@ -523,7 +537,7 @@ if (
     # --------------------------------------------------------
 
     highest_risk_deployment = recommend_deployment(
-        df,
+        active_df,
         available_officers
     )
 
@@ -588,9 +602,9 @@ if (
     and "risk_score" in df.columns
 ):
 
-    center_lat = df["latitude"].mean()
+    center_lat = active_df["latitude"].mean()
 
-    center_lon = df["longitude"].mean()
+    center_lon = active_df["longitude"].mean()
 
     traffic_map = folium.Map(
         location=[
@@ -602,12 +616,29 @@ if (
 
     # Use simulated traffic data when an incident simulation exists.
     # Otherwise use the original dataset.
-    map_df = st.session_state.get(
-        "simulated_df",
-        df
+    map_df = active_df
+
+    # Use the official police decision on the map.
+    if st.session_state.get("official_deployment") is not None:
+
+        map_deployment = st.session_state[
+            "official_deployment"
+        ].copy()
+
+    else:
+
+        map_deployment = recommend_deployment(
+            map_df,
+            available_officers
+        )
+
+    deployment_lookup = (
+        map_deployment
+        .set_index("location")["recommended_officers"]
+        .to_dict()
     )
 
-    for _, row in map_df.iterrows():
+    for _, row in active_df.iterrows():
 
         risk = float(
             row["risk_score"]
@@ -648,10 +679,18 @@ if (
             )
         )
 
+        recommended_police = int(
+            deployment_lookup.get(
+                location_name,
+                0
+            )
+        )
+
         popup_html = f"""
         <b>{location_name}</b><br>
         Risk Score: {risk:.2f}<br>
-        Risk Level: {risk_level}
+        Risk Level: {risk_level}<br>
+        🚓 AI Recommended Deployment: {recommended_police}
         """
 
         folium.CircleMarker(
@@ -710,7 +749,7 @@ if simulation_enabled:
 
     simulation_location = st.selectbox(
         "📍 Select Incident Location",
-        df["location"].tolist(),
+        active_df["location"].tolist(),
         key="simulation_location_select"
     )
 
@@ -837,9 +876,26 @@ if simulation_enabled:
                         "incident_severity"
                     ] = incident_severity
 
+                    # =================================================
+                    # FORCE DASHBOARD REFRESH
+                    # =================================================
+                    # The simulation updates session state after
+                    # active_df was initially created. Force a full
+                    # Streamlit rerun so every dashboard section
+                    # reads the new simulated dataframe.
+                    st.rerun()
+
+                    # Restart the app immediately so every dashboard
+                    # section uses the simulated traffic state.
+                    st.rerun()
+
                     st.session_state[
                         "before_row"
                     ] = before_row.to_dict()
+
+                    # Re-run the entire dashboard so every
+                    # section uses the simulated traffic state.
+                    st.rerun()
 
                     st.session_state[
                         "after_row"
@@ -1157,7 +1213,11 @@ if (
             "incident_type",
             "incident_severity",
             "before_row",
-            "after_row"
+            "after_row",
+            "official_deployment",
+            "official_decision",
+            "official_modify_location",
+            "official_modified_officers"
         ]
 
         for key in simulation_keys:
@@ -1195,11 +1255,22 @@ st.info(
 
 
 # ============================================================
+# POLICE OFFICIAL DECISION STATE
+# ============================================================
+
+if "official_deployment" not in st.session_state:
+    st.session_state["official_deployment"] = None
+
+if "official_decision" not in st.session_state:
+    st.session_state["official_decision"] = "PENDING"
+
+
+# ============================================================
 # DEPLOYMENT CALCULATION
 # ============================================================
 
 deployment_columns_available = all(
-    column in df.columns
+    column in active_df.columns
     for column in [
         "risk_score",
         "police_officers",
@@ -1216,9 +1287,297 @@ if deployment_columns_available:
     try:
 
         deployment_result = recommend_deployment(
-            df,
+            active_df,
             available_officers
         )
+
+        # ----------------------------------------------------
+        # POLICE OFFICIAL DECISION CONTROLS
+        # ----------------------------------------------------
+
+        st.subheader("👮 Police Official Decision")
+
+        st.info(
+            "The AI recommendation is advisory. "
+            "A police official can accept, modify, or reject "
+            "the recommendation. The official decision will "
+            "be reflected throughout the dashboard."
+        )
+
+        decision_col1, decision_col2, decision_col3 = st.columns(3)
+
+        with decision_col1:
+
+            if st.button(
+                "✅ Accept AI Recommendation",
+                key="accept_ai_recommendation",
+                use_container_width=True
+            ):
+
+                st.session_state["official_deployment"] = (
+                    deployment_result.copy()
+                )
+
+                st.session_state["official_decision"] = "ACCEPTED"
+
+                st.rerun()
+
+        with decision_col2:
+
+            if st.button(
+                "✏️ Modify Recommendation",
+                key="modify_ai_recommendation",
+                use_container_width=True
+            ):
+
+                st.session_state["official_decision"] = "MODIFY"
+
+        with decision_col3:
+
+            if st.button(
+                "❌ Reject AI Recommendation",
+                key="reject_ai_recommendation",
+                use_container_width=True
+            ):
+
+                rejected = deployment_result.copy()
+
+                rejected["recommended_officers"] = 0
+
+                st.session_state["official_deployment"] = rejected
+
+                st.session_state["official_decision"] = "REJECTED"
+
+                st.rerun()
+
+
+        # ----------------------------------------------------
+        # MODIFY AI RECOMMENDATION
+        # ----------------------------------------------------
+
+        if st.session_state.get(
+            "official_decision"
+        ) == "MODIFY":
+
+            st.markdown("### ✏️ Modify AI Deployment")
+
+            modify_location = st.selectbox(
+                "Select location to modify",
+                deployment_result["location"].astype(str).tolist(),
+                key="official_modify_location"
+            )
+
+            selected_ai_row = deployment_result[
+                deployment_result["location"].astype(str)
+                == str(modify_location)
+            ]
+
+            if not selected_ai_row.empty:
+
+                selected_ai_value = int(
+                    selected_ai_row.iloc[0][
+                        "recommended_officers"
+                    ]
+                )
+
+            else:
+
+                selected_ai_value = 0
+
+            # Current official allocation excluding the
+            # location currently being modified.
+            current_official_total = 0
+
+            if st.session_state.get(
+                "official_deployment"
+            ) is not None:
+
+                official_current = (
+                    st.session_state[
+                        "official_deployment"
+                    ]
+                    .copy()
+                )
+
+                official_current = official_current[
+                    official_current["location"].astype(str)
+                    != str(modify_location)
+                ]
+
+                current_official_total = int(
+                    official_current[
+                        "recommended_officers"
+                    ].sum()
+                )
+
+            else:
+
+                other_locations = deployment_result[
+                    deployment_result["location"].astype(str)
+                    != str(modify_location)
+                ]
+
+                current_official_total = int(
+                    other_locations[
+                        "recommended_officers"
+                    ].sum()
+                )
+
+            # Officers that can still be assigned to the
+            # selected location without exceeding the pool.
+            remaining_for_location = max(
+                int(available_officers)
+                - current_official_total,
+                0
+            )
+
+            st.caption(
+                f"Available Traffic Police: "
+                f"{int(available_officers)} | "
+                f"Already allocated elsewhere: "
+                f"{current_official_total} | "
+                f"Maximum allowed here: "
+                f"{remaining_for_location}"
+            )
+
+            modified_officers = st.number_input(
+                "Police officers to deploy",
+                min_value=0,
+                max_value=remaining_for_location,
+                value=min(
+                    selected_ai_value,
+                    remaining_for_location
+                ),
+                step=1,
+                key="official_modified_officers"
+            )
+
+            if st.button(
+                "💾 Apply Official Modification",
+                key="apply_official_modification",
+                use_container_width=True
+            ):
+
+                official_df = deployment_result.copy()
+
+                official_df["recommended_officers"] = (
+                    official_df["recommended_officers"]
+                    .astype(int)
+                )
+
+                official_df.loc[
+                    official_df["location"].astype(str)
+                    == str(modify_location),
+                    "recommended_officers"
+                ] = int(modified_officers)
+
+                # FINAL SAFETY CHECK:
+                # Total deployment must NEVER exceed the
+                # available traffic police pool.
+                official_total = int(
+                    official_df[
+                        "recommended_officers"
+                    ].sum()
+                )
+
+                if official_total > int(
+                    available_officers
+                ):
+
+                    st.error(
+                        f"❌ Invalid deployment: "
+                        f"{official_total} officers were requested, "
+                        f"but only {available_officers} "
+                        f"are available."
+                    )
+
+                    st.stop()
+
+                # Store only a valid official deployment.
+                st.session_state[
+                    "official_deployment"
+                ] = official_df
+
+                st.session_state[
+                    "official_total_deployment"
+                ] = official_total
+
+                st.session_state[
+                    "official_decision"
+                ] = "MODIFIED"
+
+                st.rerun()
+
+
+        # ----------------------------------------------------
+        # USE OFFICIAL DECISION EVERYWHERE
+        # ----------------------------------------------------
+
+        if (
+            st.session_state.get(
+                "official_deployment"
+            ) is not None
+        ):
+
+            deployment_result = (
+                st.session_state[
+                    "official_deployment"
+                ].copy()
+            )
+
+            # Global safety rule:
+            # Available Traffic Police must always be >=
+            # total recommended deployment.
+            official_total = int(
+                deployment_result[
+                    "recommended_officers"
+                ].sum()
+            )
+
+            if official_total > int(
+                available_officers
+            ):
+
+                st.error(
+                    f"❌ Deployment exceeds available police: "
+                    f"{official_total} recommended vs "
+                    f"{available_officers} available."
+                )
+
+                # Automatically cap the allocation to the
+                # available police pool.
+                deployment_result[
+                    "recommended_officers"
+                ] = deployment_result[
+                    "recommended_officers"
+                ].astype(int)
+
+                remaining_pool = int(
+                    available_officers
+                )
+
+                for idx in deployment_result.index:
+
+                    allocation = min(
+                        int(
+                            deployment_result.loc[
+                                idx,
+                                "recommended_officers"
+                            ]
+                        ),
+                        remaining_pool
+                    )
+
+                    deployment_result.loc[
+                        idx,
+                        "recommended_officers"
+                    ] = allocation
+
+                    remaining_pool -= allocation
+
+                st.session_state[
+                    "official_deployment"
+                ] = deployment_result.copy()
 
         st.subheader(
             "🚨 AI Police Deployment"
@@ -1267,117 +1626,947 @@ else:
     )
 
 
+
 # ============================================================
-# AI DEPLOYMENT PRIORITY CHART
+# POLICE OFFICIAL DECISION
 # ============================================================
 
-st.subheader("🎯 AI Deployment Priority")
+st.divider()
+
+st.header("👮 Police Official Decision")
+
+st.markdown(
+    """
+    The AI recommendation is advisory. A police official can
+    accept it, modify it, or reject it. The final official
+    decision becomes the active deployment used by the dashboard.
+    """
+)
+
+# ------------------------------------------------------------
+# Initialize official decision state
+# ------------------------------------------------------------
+
+if "official_decision" not in st.session_state:
+    st.session_state["official_decision"] = "PENDING"
+
+if "official_deployment" not in st.session_state:
+    st.session_state["official_deployment"] = None
+
+
+# ------------------------------------------------------------
+# Use the current AI deployment as the starting recommendation
+# ------------------------------------------------------------
+
+ai_deployment_for_official = deployment_result.copy()
+
+
+# ------------------------------------------------------------
+# Current official status
+# ------------------------------------------------------------
+
+decision = st.session_state.get(
+    "official_decision",
+    "PENDING"
+)
+
+if decision == "ACCEPTED":
+
+    st.success(
+        "✅ AI recommendation ACCEPTED by Police Official."
+    )
+
+elif decision == "MODIFIED":
+
+    st.warning(
+        "✏️ AI recommendation MODIFIED by Police Official."
+    )
+
+elif decision == "REJECTED":
+
+    st.error(
+        "❌ AI recommendation REJECTED by Police Official."
+    )
+
+else:
+
+    st.info(
+        "⏳ Police Official Decision: PENDING"
+    )
+
+
+# ------------------------------------------------------------
+# AI recommendation preview
+# ------------------------------------------------------------
+
+if (
+    ai_deployment_for_official is not None
+    and not ai_deployment_for_official.empty
+):
+
+    ai_total = int(
+        ai_deployment_for_official[
+            "recommended_officers"
+        ].sum()
+    )
+
+    st.metric(
+        "🤖 AI Recommended Deployment",
+        f"{ai_total} officers"
+    )
+
+    st.metric(
+        "👮 Available Traffic Police",
+        int(available_officers)
+    )
+
+
+# ============================================================
+# ACCEPT
+# ============================================================
+
+accept_col, modify_col, reject_col = st.columns(3)
+
+with accept_col:
+
+    if st.button(
+        "✅ Accept AI Recommendation",
+        key="official_accept_button",
+        width="stretch"
+    ):
+
+        accepted_df = ai_deployment_for_official.copy()
+
+        accepted_total = int(
+            accepted_df[
+                "recommended_officers"
+            ].sum()
+        )
+
+        # Safety rule
+        if accepted_total > int(
+            available_officers
+        ):
+
+            st.error(
+                f"Cannot accept deployment of "
+                f"{accepted_total} officers. "
+                f"Only {available_officers} are available."
+            )
+
+        else:
+
+            st.session_state[
+                "official_deployment"
+            ] = accepted_df
+
+            st.session_state[
+                "official_decision"
+            ] = "ACCEPTED"
+
+            st.session_state[
+                "official_total_deployment"
+            ] = accepted_total
+
+            st.rerun()
+
+
+# ============================================================
+# MODIFY
+# ============================================================
+
+with modify_col:
+
+    if st.button(
+        "✏️ Modify Recommendation",
+        key="official_modify_button",
+        width="stretch"
+    ):
+
+        st.session_state[
+            "show_official_modify"
+        ] = True
+
+
+# ============================================================
+# REJECT
+# ============================================================
+
+with reject_col:
+
+    if st.button(
+        "❌ Reject AI Recommendation",
+        key="official_reject_button",
+        width="stretch"
+    ):
+
+        rejected_df = ai_deployment_for_official.copy()
+
+        rejected_df[
+            "recommended_officers"
+        ] = 0
+
+        st.session_state[
+            "official_deployment"
+        ] = rejected_df
+
+        st.session_state[
+            "official_decision"
+        ] = "REJECTED"
+
+        st.session_state[
+            "official_total_deployment"
+        ] = 0
+
+        st.rerun()
+
+
+# ============================================================
+# OFFICIAL MODIFICATION PANEL
+# ============================================================
+
+if st.session_state.get(
+    "show_official_modify",
+    False
+):
+
+    st.subheader(
+        "✏️ AI-Assisted Deployment Modification"
+    )
+
+    st.markdown(
+        """
+        The AI analyses the current deployment and identifies
+        locations where officers may be released and locations
+        where additional officers are more urgently required.
+        """
+    )
+
+    modify_df = ai_deployment_for_official.copy()
+
+    # ------------------------------------------------------------
+    # Make sure required columns exist
+    # ------------------------------------------------------------
+
+    required_modify_columns = [
+        "location",
+        "priority_score",
+        "risk_score",
+        "risk_level",
+        "police_officers",
+        "recommended_officers"
+    ]
+
+    missing_modify_columns = [
+        c for c in required_modify_columns
+        if c not in modify_df.columns
+    ]
+
+    if missing_modify_columns:
+
+        st.error(
+            "Cannot generate AI modification suggestions. "
+            f"Missing columns: {missing_modify_columns}"
+        )
+
+    else:
+
+        # --------------------------------------------------------
+        # AI priority classification
+        # --------------------------------------------------------
+
+        modify_df["risk_level"] = (
+            modify_df["risk_level"]
+            .astype(str)
+            .str.upper()
+        )
+
+        modify_df["priority_score"] = (
+            pd.to_numeric(
+                modify_df["priority_score"],
+                errors="coerce"
+            )
+            .fillna(0)
+        )
+
+        modify_df["risk_score"] = (
+            pd.to_numeric(
+                modify_df["risk_score"],
+                errors="coerce"
+            )
+            .fillna(0)
+        )
+
+        modify_df["police_officers"] = (
+            pd.to_numeric(
+                modify_df["police_officers"],
+                errors="coerce"
+            )
+            .fillna(0)
+            .astype(int)
+        )
+
+        modify_df["recommended_officers"] = (
+            pd.to_numeric(
+                modify_df["recommended_officers"],
+                errors="coerce"
+            )
+            .fillna(0)
+            .astype(int)
+        )
+
+        # --------------------------------------------------------
+        # LOW PRIORITY / RELEASE CANDIDATES
+        # --------------------------------------------------------
+        #
+        # A location is a release candidate when:
+        # - its priority is relatively low
+        # - it currently has police assigned
+        #
+        # We use the lower half of priority scores rather than
+        # blindly assuming that every MODERATE location is safe.
+        # --------------------------------------------------------
+
+        priority_median = modify_df[
+            "priority_score"
+        ].median()
+
+        release_candidates = modify_df[
+            (
+                modify_df["priority_score"]
+                <= priority_median
+            )
+            &
+            (
+                modify_df["recommended_officers"]
+                > 0
+            )
+        ].copy()
+
+        # --------------------------------------------------------
+        # HIGH PRIORITY / RECEIVER LOCATIONS
+        # --------------------------------------------------------
+
+        receiver_candidates = modify_df[
+            modify_df["recommended_officers"]
+            <
+            modify_df["recommended_officers"].clip(
+                lower=0
+            )
+        ].copy()
+
+        # The expression above is intentionally replaced below
+        # with an explicit AI demand calculation.
+
+        def calculate_ai_need(row):
+
+            risk = float(row["risk_score"])
+            level = str(row["risk_level"]).upper()
+            incidents = int(
+                row.get("current_incidents", 0)
+            )
+
+            if level == "CRITICAL" or risk >= 80:
+                need = 3
+            elif level == "HIGH" or risk >= 65:
+                need = 2
+            elif level == "MODERATE" or risk >= 45:
+                need = 1
+            else:
+                need = 0
+
+            if incidents > 0:
+                need = max(need, 1)
+
+            return need
+
+        modify_df["AI Required Officers"] = modify_df.apply(
+            calculate_ai_need,
+            axis=1
+        )
+
+        modify_df["Additional Officers Needed"] = (
+            modify_df["AI Required Officers"]
+            -
+            modify_df["recommended_officers"]
+        ).clip(lower=0)
+
+        receiver_candidates = modify_df[
+            modify_df[
+                "Additional Officers Needed"
+            ] > 0
+        ].copy()
+
+        receiver_candidates = receiver_candidates.sort_values(
+            "priority_score",
+            ascending=False
+        )
+
+        release_candidates = release_candidates.sort_values(
+            "priority_score",
+            ascending=True
+        )
+
+        # --------------------------------------------------------
+        # AI TRANSFER SUGGESTIONS
+        # --------------------------------------------------------
+
+        suggestions = []
+
+        available_transfer_pool = 0
+
+        for _, row in release_candidates.iterrows():
+
+            releasable = int(
+                row["recommended_officers"]
+            )
+
+            if releasable <= 0:
+                continue
+
+            suggestions.append(
+                {
+                    "from_location":
+                        row["location"],
+                    "from_priority":
+                        float(row["priority_score"]),
+                    "from_risk":
+                        float(row["risk_score"]),
+                    "available_to_release":
+                        releasable
+                }
+            )
+
+            available_transfer_pool += releasable
+
+        transfers = []
+
+        remaining_pool = available_transfer_pool
+
+        for _, receiver in receiver_candidates.iterrows():
+
+            if remaining_pool <= 0:
+                break
+
+            needed = int(
+                receiver[
+                    "Additional Officers Needed"
+                ]
+            )
+
+            allocation = min(
+                needed,
+                remaining_pool
+            )
+
+            if allocation <= 0:
+                continue
+
+            transfers.append(
+                {
+                    "to_location":
+                        receiver["location"],
+                    "to_priority":
+                        float(receiver["priority_score"]),
+                    "to_risk":
+                        float(receiver["risk_score"]),
+                    "officers":
+                        allocation
+                }
+            )
+
+            remaining_pool -= allocation
+
+        # --------------------------------------------------------
+        # DISPLAY AI SUGGESTION
+        # --------------------------------------------------------
+
+        st.subheader(
+            "🤖 AI Recommended Reallocation"
+        )
+
+        if transfers and suggestions:
+
+            st.success(
+                "The AI found a possible reallocation: "
+                "release officers from lower-priority locations "
+                "and move them to locations with greater need."
+            )
+
+            transfer_rows = []
+
+            release_index = 0
+
+            for transfer in transfers:
+
+                officers_needed = transfer[
+                    "officers"
+                ]
+
+                while officers_needed > 0:
+
+                    if release_index >= len(
+                        suggestions
+                    ):
+                        break
+
+                    source = suggestions[
+                        release_index
+                    ]
+
+                    movable = min(
+                        officers_needed,
+                        source[
+                            "available_to_release"
+                        ]
+                    )
+
+                    if movable > 0:
+
+                        transfer_rows.append(
+                            {
+                                "Release From":
+                                    source[
+                                        "from_location"
+                                    ],
+                                "Source Priority":
+                                    round(
+                                        source[
+                                            "from_priority"
+                                        ],
+                                        2
+                                    ),
+                                "Source Risk":
+                                    round(
+                                        source[
+                                            "from_risk"
+                                        ],
+                                        2
+                                    ),
+                                "Move Officers":
+                                    movable,
+                                "Reallocate To":
+                                    transfer[
+                                        "to_location"
+                                    ],
+                                "Destination Priority":
+                                    round(
+                                        transfer[
+                                            "to_priority"
+                                        ],
+                                        2
+                                    ),
+                                "Destination Risk":
+                                    round(
+                                        transfer[
+                                            "to_risk"
+                                        ],
+                                        2
+                                    )
+                            }
+                        )
+
+                        suggestions[
+                            release_index
+                        ][
+                            "available_to_release"
+                        ] -= movable
+
+                        officers_needed -= movable
+
+                    if suggestions[
+                        release_index
+                    ][
+                        "available_to_release"
+                    ] <= 0:
+
+                        release_index += 1
+
+            if transfer_rows:
+
+                transfer_df = pd.DataFrame(
+                    transfer_rows
+                )
+
+                st.dataframe(
+                    transfer_df,
+                    width="stretch",
+                    hide_index=True
+                )
+
+                total_transfer = int(
+                    transfer_df[
+                        "Move Officers"
+                    ].sum()
+                )
+
+                st.info(
+                    f"💡 AI suggests moving "
+                    f"**{total_transfer} officer(s)** "
+                    f"from lower-priority locations to "
+                    f"higher-priority locations."
+                )
+
+            else:
+
+                st.info(
+                    "No safe officer reallocation was identified."
+                )
+
+        else:
+
+            st.info(
+                "No low-priority officer allocation can "
+                "currently be released for a higher-priority "
+                "location."
+            )
+
+        # --------------------------------------------------------
+        # MANUAL OFFICIAL MODIFICATION
+        # --------------------------------------------------------
+
+        st.subheader(
+            "✏️ Official Modification"
+        )
+
+        st.caption(
+            "The AI suggestion is advisory. "
+            "The police official makes the final decision."
+        )
+
+        modify_locations = (
+            modify_df["location"]
+            .astype(str)
+            .tolist()
+        )
+
+        modify_location = st.selectbox(
+            "Select location to modify",
+            modify_locations,
+            key="official_modify_location"
+        )
+
+        selected_row = modify_df[
+            modify_df["location"].astype(str)
+            == str(modify_location)
+        ].iloc[0]
+
+        current_allocation = int(
+            selected_row[
+                "recommended_officers"
+            ]
+        )
+
+        # --------------------------------------------------------
+        # Calculate maximum legal allocation
+        # --------------------------------------------------------
+
+        other_locations = modify_df[
+            modify_df["location"].astype(str)
+            != str(modify_location)
+        ]
+
+        officers_elsewhere = int(
+            other_locations[
+                "recommended_officers"
+            ].sum()
+        )
+
+        maximum_allowed = max(
+            int(available_officers)
+            - officers_elsewhere,
+            0
+        )
+
+        st.write(
+            f"Current AI allocation: "
+            f"**{current_allocation} officers**"
+        )
+
+        st.write(
+            f"Maximum allowed after considering "
+            f"other locations: "
+            f"**{maximum_allowed} officers**"
+        )
+
+        modified_officers = st.number_input(
+            "Final officers at selected location",
+            min_value=0,
+            max_value=maximum_allowed,
+            value=min(
+                current_allocation,
+                maximum_allowed
+            ),
+            step=1,
+            key="official_modified_officers"
+        )
+
+        save_col, cancel_col = st.columns(2)
+
+        with save_col:
+
+            if st.button(
+                "💾 Save Official Modification",
+                key="save_official_modification",
+                width="stretch"
+            ):
+
+                modified_df = modify_df.copy()
+
+                modified_df.loc[
+                    modified_df[
+                        "location"
+                    ].astype(str)
+                    == str(modify_location),
+                    "recommended_officers"
+                ] = int(modified_officers)
+
+                # ------------------------------------------------
+                # HARD AVAILABLE-OFFICER VALIDATION
+                # ------------------------------------------------
+
+                final_total = int(
+                    modified_df[
+                        "recommended_officers"
+                    ].sum()
+                )
+
+                if final_total > int(
+                    available_officers
+                ):
+
+                    st.error(
+                        f"❌ Invalid decision: "
+                        f"{final_total} officers requested, "
+                        f"but only {available_officers} "
+                        f"are available."
+                    )
+
+                else:
+
+                    st.session_state[
+                        "official_deployment"
+                    ] = modified_df
+
+                    st.session_state[
+                        "official_decision"
+                    ] = "MODIFIED"
+
+                    st.session_state[
+                        "official_total_deployment"
+                    ] = final_total
+
+                    st.session_state[
+                        "show_official_modify"
+                    ] = False
+
+                    st.rerun()
+
+        with cancel_col:
+
+            if st.button(
+                "Cancel",
+                key="cancel_official_modification",
+                width="stretch"
+            ):
+
+                st.session_state[
+                    "show_official_modify"
+                ] = False
+
+                st.rerun()
+
+
+
+# ============================================================
+# FINAL OFFICIAL DEPLOYMENT
+# ============================================================
+
+official_deployment = st.session_state.get(
+    "official_deployment"
+)
+
+if (
+    official_deployment is not None
+    and not official_deployment.empty
+):
+
+    final_total = int(
+        official_deployment[
+            "recommended_officers"
+        ].sum()
+    )
+
+    st.subheader(
+        "📋 Final Official Deployment"
+    )
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+
+        st.metric(
+            "👮 Available Police",
+            int(available_officers)
+        )
+
+    with col2:
+
+        st.metric(
+            "🚓 Final Deployment",
+            final_total
+        )
+
+    with col3:
+
+        st.metric(
+            "🟢 Remaining Police",
+            max(
+                int(available_officers)
+                - final_total,
+                0
+            )
+        )
+
+    final_columns = [
+        column
+        for column in [
+            "location",
+            "risk_score",
+            "risk_level",
+            "priority_score",
+            "recommended_officers"
+        ]
+        if column in official_deployment.columns
+    ]
+
+    final_display = official_deployment[
+        final_columns
+    ].rename(
+        columns={
+            "recommended_officers":
+                "Final Official Deployment"
+        }
+    )
+
+    st.dataframe(
+        final_display,
+        width="stretch",
+        hide_index=True
+    )
+
+
+# ============================================================
+# AI PRIORITY ORDER
+# ============================================================
+
+# All locations are ranked by the AI priority score.
+# Highest priority appears first.
+#
+# No Top-10 limitation is used.
 
 if (
     deployment_result is not None
     and not deployment_result.empty
     and "priority_score" in deployment_result.columns
-    and "location" in deployment_result.columns
 ):
 
-    chart_data = (
+    deployment_result = (
         deployment_result
         .sort_values(
             "priority_score",
             ascending=False
         )
-        .head(10)
-        .copy()
+        .reset_index(drop=True)
     )
 
-    # --------------------------------------------------------
-    # Add AI ranking
-    # --------------------------------------------------------
-
-    chart_data["Rank"] = range(
-        1,
-        len(chart_data) + 1
+    deployment_result["AI Priority Rank"] = (
+        range(1, len(deployment_result) + 1)
     )
 
-    chart_data["Rank Label"] = chart_data["Rank"].map(
-        lambda rank:
-            "🥇" if rank == 1
-            else "🥈" if rank == 2
-            else "🥉" if rank == 3
-            else f"#{rank}"
+    deployment_result["AI Priority"] = (
+        deployment_result["priority_score"]
+        .astype(float)
+        .round(2)
     )
 
-    chart_data["Risk Score"] = chart_data[
-        "risk_score"
-    ].round(2)
-
-    chart_data["Priority Score"] = chart_data[
-        "priority_score"
-    ].round(2)
-
-    chart_data["AI Recommended Deployment"] = chart_data[
-        "recommended_officers"
-    ].astype(int)
-
-    # Reverse for highest priority at the top
-    chart_data = chart_data.sort_values(
-        "Priority Score",
-        ascending=True
-    )
-
-    fig = px.bar(
-        chart_data,
-        x="Priority Score",
-        y="location",
-        orientation="h",
-        text="Priority Score",
-        custom_data=[
-            "Risk Score",
-            "AI Recommended Deployment",
-            "Rank Label"
-        ],
-        title="🎯 Top High-Priority Traffic Locations"
-    )
-
-    fig.update_traces(
-        textposition="outside",
-        marker_line_width=1.5,
-        hovertemplate=(
-            "<b>%{customdata[2]} %{y}</b><br>"
-            "AI Priority Score: %{x:.2f}<br>"
-            "Traffic Risk: %{customdata[0]:.2f}<br>"
-            "AI Recommended Deployment: "
-            "%{customdata[1]}<extra></extra>"
+    deployment_result["Priority Category"] = (
+        deployment_result["risk_level"]
+        .astype(str)
+        .str.upper()
+        .map(
+            lambda level:
+                "🔴 CRITICAL AI PRIORITY"
+                if level == "CRITICAL"
+                else
+                "🟠 HIGH AI PRIORITY"
+                if level == "HIGH"
+                else
+                "🟢 MODERATE AI PRIORITY"
+                if level == "MODERATE"
+                else
+                "🔵 LOW AI PRIORITY"
         )
     )
 
-    fig.update_layout(
-        height=550,
-        template="plotly_white",
-        xaxis_title="AI Priority Score",
-        yaxis_title="Location",
-        showlegend=False,
-        margin=dict(
-            l=40,
-            r=100,
-            t=80,
-            b=40
-        ),
-        transition={
-            "duration": 900,
-            "easing": "cubic-in-out"
+    st.subheader(
+        "📊 All Locations — AI Priority Ranking"
+    )
+
+    st.caption(
+        "All locations are ranked by AI Priority Score, "
+        "from highest priority to lowest priority."
+    )
+
+    priority_display_columns = [
+        column
+        for column in [
+            "AI Priority Rank",
+            "location",
+            "AI Priority",
+            "Priority Category",
+            "risk_score",
+            "risk_level",
+            "recommended_officers"
+        ]
+        if column in deployment_result.columns
+    ]
+
+    priority_display = deployment_result[
+        priority_display_columns
+    ].rename(
+        columns={
+            "location": "Location",
+            "risk_score": "Traffic Risk Score",
+            "risk_level": "Risk Level",
+            "recommended_officers":
+                "AI Recommended Officers"
         }
     )
 
-    st.plotly_chart(
-        fig,
-        width="stretch"
+    st.dataframe(
+        priority_display,
+        width="stretch",
+        hide_index=True
+    )
+
+    # --------------------------------------------------------
+    # Highest priority location
+    # --------------------------------------------------------
+
+    highest_priority = deployment_result.iloc[0]
+
+    st.info(
+        f"🎯 **Highest AI Priority:** "
+        f"{highest_priority['location']} "
+        f"— AI Priority Score: "
+        f"**{float(highest_priority['priority_score']):.2f}**"
     )
 
 else:
 
     st.warning(
-        "AI deployment priority data is not available."
+        "AI priority ranking is not available."
     )
 
 
