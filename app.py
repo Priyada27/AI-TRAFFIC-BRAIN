@@ -6,6 +6,10 @@ from streamlit_folium import st_folium
 
 from risk_engine import add_risk_analysis
 from deployment import recommend_deployment
+from incident_simulator import (
+    simulate_incident,
+    get_incident_description
+)
 
 
 # ============================================================
@@ -414,20 +418,22 @@ st.header("🚨 Traffic Incident Simulator")
 st.markdown(
     """
     Simulate a sudden traffic incident and observe how the
-    AI Traffic Brain responds to changing traffic conditions.
+    AI Traffic Brain recalculates traffic risk and deployment
+    priority.
     """
 )
 
 simulation_enabled = st.checkbox(
-    "Enable Incident Simulation"
+    "Enable Incident Simulation",
+    key="simulation_enabled"
 )
-
 
 if simulation_enabled:
 
     simulation_location = st.selectbox(
         "📍 Select Incident Location",
-        df["location"].tolist()
+        df["location"].tolist(),
+        key="simulation_location_select"
     )
 
     incident_type = st.selectbox(
@@ -438,120 +444,141 @@ if simulation_enabled:
             "Road Blockage",
             "Traffic Jam",
             "Emergency Vehicle Movement"
-        ]
+        ],
+        key="incident_type_select"
     )
 
     incident_severity = st.slider(
         "⚠️ Incident Severity",
         min_value=1,
         max_value=10,
-        value=5
+        value=5,
+        key="incident_severity_select"
     )
 
     if st.button(
         "🚨 Simulate Incident",
-        type="primary"
+        type="primary",
+        key="simulate_incident_button"
     ):
 
-        simulated_df = df.copy()
+        try:
 
-        selected_index = simulated_df[
-            simulated_df["location"]
-            == simulation_location
-        ].index
+            # =================================================
+            # BEFORE INCIDENT
+            # =================================================
 
-        if len(selected_index) > 0:
+            before_df = add_risk_analysis(
+                df.copy()
+            )
 
-            index = selected_index[0]
+            before_deployment = recommend_deployment(
+                before_df,
+                available_officers
+            )
 
-            # ------------------------------------------------
-            # Increase current incidents
-            # ------------------------------------------------
+            before_matches = before_deployment[
+                before_deployment["location"]
+                == simulation_location
+            ]
 
-            if "current_incidents" in simulated_df.columns:
+            if before_matches.empty:
 
-                simulated_df.loc[
-                    index,
-                    "current_incidents"
-                ] += incident_severity
-
-
-            # ------------------------------------------------
-            # Increase traffic density
-            # ------------------------------------------------
-
-            if "traffic_density" in simulated_df.columns:
-
-                simulated_df.loc[
-                    index,
-                    "traffic_density"
-                ] = min(
-                    simulated_df.loc[
-                        index,
-                        "traffic_density"
-                    ] + incident_severity * 3,
-                    100
+                st.error(
+                    "Selected location was not found."
                 )
 
+            else:
 
-            # ------------------------------------------------
-            # Recalculate risk
-            # ------------------------------------------------
+                before_row = before_matches.iloc[0]
 
-            try:
+                # =============================================
+                # SIMULATE INCIDENT
+                # =============================================
+
+                simulated_df = simulate_incident(
+                    df=df,
+                    location=simulation_location,
+                    incident_type=incident_type,
+                    severity=incident_severity
+                )
+
+                # =============================================
+                # RECALCULATE RISK
+                # =============================================
 
                 simulated_df = add_risk_analysis(
                     simulated_df
                 )
 
-
-                # ------------------------------------------------
-                # Recalculate deployment
-                # ------------------------------------------------
+                # =============================================
+                # RECALCULATE DEPLOYMENT
+                # =============================================
 
                 simulated_deployment = recommend_deployment(
                     simulated_df,
                     available_officers
                 )
 
+                after_matches = simulated_deployment[
+                    simulated_deployment["location"]
+                    == simulation_location
+                ]
 
-                # ------------------------------------------------
-                # Store simulation state
-                # ------------------------------------------------
+                if after_matches.empty:
 
-                st.session_state[
-                    "simulated_df"
-                ] = simulated_df
+                    st.error(
+                        "Simulated location was not found."
+                    )
 
-                st.session_state[
-                    "simulated_deployment"
-                ] = simulated_deployment
+                else:
 
-                st.session_state[
-                    "simulation_location"
-                ] = simulation_location
+                    after_row = after_matches.iloc[0]
 
-                st.session_state[
-                    "incident_type"
-                ] = incident_type
+                    # =========================================
+                    # SAVE SIMULATION STATE
+                    # =========================================
 
-                st.session_state[
-                    "incident_severity"
-                ] = incident_severity
+                    st.session_state[
+                        "simulated_df"
+                    ] = simulated_df
 
+                    st.session_state[
+                        "simulated_deployment"
+                    ] = simulated_deployment
 
-                st.success(
-                    f"🚨 {incident_type} simulated at "
-                    f"**{simulation_location}**"
-                )
+                    st.session_state[
+                        "simulation_location"
+                    ] = simulation_location
 
-            except Exception as e:
+                    st.session_state[
+                        "incident_type"
+                    ] = incident_type
 
-                st.error(
-                    "Simulation failed."
-                )
+                    st.session_state[
+                        "incident_severity"
+                    ] = incident_severity
 
-                st.exception(e)
+                    st.session_state[
+                        "before_row"
+                    ] = before_row.to_dict()
+
+                    st.session_state[
+                        "after_row"
+                    ] = after_row.to_dict()
+
+                    st.success(
+                        f"🚨 {incident_type} simulated at "
+                        f"**{simulation_location}**"
+                    )
+
+        except Exception as e:
+
+            st.error(
+                "Simulation failed."
+            )
+
+            st.exception(e)
 
 
 # ============================================================
@@ -561,112 +588,248 @@ if simulation_enabled:
 if (
     "simulated_deployment" in st.session_state
     and "simulation_location" in st.session_state
+    and "before_row" in st.session_state
+    and "after_row" in st.session_state
 ):
 
     st.subheader(
         "📈 AI Response to Incident"
     )
 
-    simulated_deployment = st.session_state[
-        "simulated_deployment"
-    ]
-
     simulation_location = st.session_state[
         "simulation_location"
     ]
 
-    affected = simulated_deployment[
-        simulated_deployment["location"]
-        == simulation_location
+    incident_name = st.session_state.get(
+        "incident_type",
+        "Traffic Incident"
+    )
+
+    incident_severity_value = st.session_state.get(
+        "incident_severity",
+        0
+    )
+
+    before_row = st.session_state[
+        "before_row"
     ]
 
+    after_row = st.session_state[
+        "after_row"
+    ]
 
-    if not affected.empty:
+    # ========================================================
+    # BEFORE VALUES
+    # ========================================================
 
-        affected_row = affected.iloc[0]
+    before_risk = float(
+        before_row["risk_score"]
+    )
 
-        new_risk = float(
-            affected_row["risk_score"]
+    before_level = str(
+        before_row["risk_level"]
+    )
+
+    before_priority = float(
+        before_row["priority_score"]
+    )
+
+    before_officers = int(
+        before_row["recommended_officers"]
+    )
+
+    # ========================================================
+    # AFTER VALUES
+    # ========================================================
+
+    after_risk = float(
+        after_row["risk_score"]
+    )
+
+    after_level = str(
+        after_row["risk_level"]
+    )
+
+    after_priority = float(
+        after_row["priority_score"]
+    )
+
+    after_officers = int(
+        after_row["recommended_officers"]
+    )
+
+    # ========================================================
+    # CHANGES
+    # ========================================================
+
+    risk_change = round(
+        after_risk - before_risk,
+        2
+    )
+
+    priority_change = round(
+        after_priority - before_priority,
+        2
+    )
+
+    officer_change = (
+        after_officers - before_officers
+    )
+
+    # ========================================================
+    # INCIDENT DESCRIPTION
+    # ========================================================
+
+    description = get_incident_description(
+        incident_name,
+        incident_severity_value
+    )
+
+    st.info(
+        f"""
+        **🚨 Incident Description**
+
+        {description}
+        """
+    )
+
+    # ========================================================
+    # KEY METRICS
+    # ========================================================
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+
+        st.metric(
+            "📍 Location",
+            simulation_location
         )
 
-        new_priority = float(
-            affected_row["priority_score"]
+    with col2:
+
+        st.metric(
+            "⚠️ Risk Score",
+            f"{after_risk:.2f}",
+            delta=f"{risk_change:+.2f}"
         )
 
-        new_officers = int(
-            affected_row["recommended_officers"]
+    with col3:
+
+        st.metric(
+            "🎯 Priority Score",
+            f"{after_priority:.2f}",
+            delta=f"{priority_change:+.2f}"
         )
 
-        risk_level = str(
-            affected_row["risk_level"]
+    with col4:
+
+        st.metric(
+            "👮 Recommended Police",
+            after_officers,
+            delta=f"{officer_change:+d}"
         )
 
+    # ========================================================
+    # BEFORE VS AFTER
+    # ========================================================
 
-        col1, col2, col3, col4 = st.columns(4)
+    st.subheader(
+        "🔄 Before vs After Incident"
+    )
 
-        with col1:
+    comparison_df = pd.DataFrame(
+        {
+            "Metric": [
+                "Risk Score",
+                "Risk Level",
+                "Priority Score",
+                "Recommended Police"
+            ],
+            "Before Incident": [
+                f"{before_risk:.2f}",
+                before_level,
+                f"{before_priority:.2f}",
+                before_officers
+            ],
+            "After Incident": [
+                f"{after_risk:.2f}",
+                after_level,
+                f"{after_priority:.2f}",
+                after_officers
+            ]
+        }
+    )
 
-            st.metric(
-                "📍 Location",
-                simulation_location
-            )
+    st.dataframe(
+        comparison_df,
+        use_container_width=True,
+        hide_index=True
+    )
 
-        with col2:
+    # ========================================================
+    # AI DECISION SUMMARY
+    # ========================================================
 
-            st.metric(
-                "⚠️ New Risk",
-                f"{new_risk:.2f}"
-            )
+    st.subheader(
+        "🧠 AI Decision Summary"
+    )
 
-        with col3:
+    if risk_change > 0:
 
-            st.metric(
-                "🎯 Priority",
-                f"{new_priority:.2f}"
-            )
-
-        with col4:
-
-            st.metric(
-                "👮 Recommended Police",
-                new_officers
-            )
-
-
-        incident_name = st.session_state.get(
-            "incident_type",
-            "Traffic Incident"
-        )
-
-        incident_severity_value = st.session_state.get(
-            "incident_severity",
-            0
-        )
-
-
-        st.info(
+        st.warning(
             f"""
-            **AI Response**
+            **Risk increased by {risk_change:.2f} points.**
 
-            A **{incident_name}** with severity
+            A **{incident_name.lower()}** with severity
             **{incident_severity_value}/10** was simulated at
             **{simulation_location}**.
 
-            The AI recalculated the traffic conditions.
+            **Risk transition:**
 
-            **New Risk Level:** {risk_level}
+            {before_risk:.2f} ({before_level})
+            → {after_risk:.2f} ({after_level})
 
-            **New Risk Score:** {new_risk:.2f}
+            **Priority transition:**
 
-            **New Priority Score:** {new_priority:.2f}
+            {before_priority:.2f}
+            → {after_priority:.2f}
 
-            **Recommended Police:** {new_officers}
+            **Police recommendation:**
+
+            {before_officers}
+            → {after_officers}
+
+            The AI recalculated the location's risk and
+            deployment priority using the updated traffic
+            conditions.
 
             The final deployment decision remains with the
             authorized traffic authority.
             """
         )
 
+    elif risk_change < 0:
+
+        st.success(
+            f"""
+            **Risk decreased by {abs(risk_change):.2f} points.**
+
+            The AI recalculated the location after the
+            simulated incident.
+            """
+        )
+
+    else:
+
+        st.info(
+            """
+            **No change in calculated risk score.**
+
+            The simulated conditions did not change the
+            final weighted risk score.
+            """
+        )
 
     # ========================================================
     # UPDATED DEPLOYMENT
@@ -675,6 +838,10 @@ if (
     st.subheader(
         "🚓 Updated Deployment Recommendation"
     )
+
+    simulated_deployment = st.session_state[
+        "simulated_deployment"
+    ]
 
     simulation_display_columns = [
         column
@@ -696,13 +863,13 @@ if (
         hide_index=True
     )
 
-
     # ========================================================
-    # RESET SIMULATION
+    # RESET
     # ========================================================
 
     if st.button(
-        "🔄 Reset Simulation"
+        "🔄 Reset Simulation",
+        key="reset_simulation_button"
     ):
 
         simulation_keys = [
@@ -710,7 +877,9 @@ if (
             "simulated_deployment",
             "simulation_location",
             "incident_type",
-            "incident_severity"
+            "incident_severity",
+            "before_row",
+            "after_row"
         ]
 
         for key in simulation_keys:
