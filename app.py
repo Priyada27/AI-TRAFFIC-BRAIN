@@ -320,13 +320,13 @@ else:
     maximum_density = 0
 
 
-if "avg_speed" in df.columns:
+if "peak_activity" in df.columns:
 
-    average_speed = df["avg_speed"].mean()
+    average_peak_activity = df["peak_activity"].mean()
 
 else:
 
-    average_speed = 0
+    average_peak_activity = 0
 
 
 col1, col2, col3 = st.columns(3)
@@ -348,8 +348,8 @@ with col2:
 with col3:
 
     st.metric(
-        "🏎️ Average Speed",
-        f"{average_speed:.1f}"
+        "📈 Average Peak Activity",
+        f"{average_peak_activity:.1f}%"
     )
 
 
