@@ -153,11 +153,15 @@ st.sidebar.markdown(
     "Simulate traffic authority decisions using the controls below."
 )
 
+total_dataset_officers = int(
+    df["police_officers"].sum()
+) if "police_officers" in df.columns else 50
+
 available_officers = st.sidebar.slider(
     "👮 Available Traffic Police",
     min_value=1,
-    max_value=50,
-    value=10,
+    max_value=max(total_dataset_officers, 50),
+    value=min(30, max(total_dataset_officers, 50)),
     step=1
 )
 
@@ -230,15 +234,9 @@ else:
     active_incidents = 0
 
 
-if "police_officers" in df.columns:
-
-    total_police_officers = int(
-        df["police_officers"].sum()
-    )
-
-else:
-
-    total_police_officers = 0
+# The sidebar slider is the single source of truth
+# for the currently available deployment pool.
+total_police_officers = available_officers
 
 
 # ============================================================
@@ -426,7 +424,7 @@ if "risk_level" in df.columns:
 
     st.plotly_chart(
         fig,
-        use_container_width=True
+        width="stretch"
     )
 
 else:
@@ -450,8 +448,17 @@ if (
     and "location" in df.columns
 ):
 
+    # --------------------------------------------------------
+    # Calculate AI deployment using the sidebar police slider
+    # --------------------------------------------------------
+
+    highest_risk_deployment = recommend_deployment(
+        df,
+        available_officers
+    )
+
     top_risk = (
-        df
+        highest_risk_deployment
         .sort_values(
             "risk_score",
             ascending=False
@@ -466,18 +473,26 @@ if (
             "risk_score",
             "risk_level",
             "traffic_density",
-            "avg_speed",
             "current_incidents",
-            "police_officers"
+            "police_officers",
+            "recommended_officers"
         ]
         if column in top_risk.columns
     ]
 
+    # Rename columns so the distinction is clear
+    top_risk_display = top_risk[
+        risk_display_columns
+    ].rename(
+        columns={
+            "police_officers": "Current Police",
+            "recommended_officers": "AI Recommended Deployment"
+        }
+    )
+
     st.dataframe(
-        top_risk[
-            risk_display_columns
-        ],
-        use_container_width=True,
+        top_risk_display,
+        width="stretch",
         hide_index=True
     )
 
@@ -902,7 +917,7 @@ if (
     with col4:
 
         st.metric(
-            "👮 Recommended Police",
+            "🚓 AI Recommended Deployment",
             after_officers,
             delta=f"{officer_change:+d}"
         )
@@ -921,7 +936,7 @@ if (
                 "Risk Score",
                 "Risk Level",
                 "Priority Score",
-                "Recommended Police"
+                "AI Recommended Deployment"
             ],
             "Before Incident": [
                 f"{before_risk:.2f}",
@@ -940,7 +955,7 @@ if (
 
     st.dataframe(
         comparison_df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True
     )
 
@@ -1036,7 +1051,7 @@ if (
         simulated_deployment[
             simulation_display_columns
         ],
-        use_container_width=True,
+        width="stretch",
         hide_index=True
     )
 
@@ -1120,7 +1135,7 @@ if deployment_columns_available:
         )
 
         st.subheader(
-            "🚨 Recommended Police Deployment"
+            "🚨 AI Police Deployment"
         )
 
         deployment_display_columns = [
@@ -1135,11 +1150,18 @@ if deployment_columns_available:
             if column in deployment_result.columns
         ]
 
+        deployment_display = deployment_result[
+            deployment_display_columns
+        ].rename(
+            columns={
+                "police_officers": "Current Police",
+                "recommended_officers": "AI Recommended Deployment"
+            }
+        )
+
         st.dataframe(
-            deployment_result[
-                deployment_display_columns
-            ],
-            use_container_width=True,
+            deployment_display,
+            width="stretch",
             hide_index=True
         )
 
@@ -1157,6 +1179,181 @@ else:
         "Police deployment cannot be calculated because "
         "required dataset columns are missing."
     )
+
+
+# ============================================================
+# AI DEPLOYMENT PRIORITY CHART
+# ============================================================
+
+st.subheader("🎯 AI Deployment Priority")
+
+if (
+    deployment_result is not None
+    and not deployment_result.empty
+    and "priority_score" in deployment_result.columns
+    and "location" in deployment_result.columns
+):
+
+    chart_data = (
+        deployment_result
+        .sort_values(
+            "priority_score",
+            ascending=False
+        )
+        .head(10)
+        .copy()
+    )
+
+    chart_data = chart_data.sort_values(
+        "priority_score",
+        ascending=True
+    )
+
+    chart_data["Risk Score"] = chart_data[
+        "risk_score"
+    ].round(2)
+
+    chart_data["Priority Score"] = chart_data[
+        "priority_score"
+    ].round(2)
+
+    chart_data["AI Recommended Deployment"] = chart_data[
+        "recommended_officers"
+    ].astype(int)
+
+    fig = px.bar(
+        chart_data,
+        x="Priority Score",
+        y="location",
+        orientation="h",
+        text="Priority Score",
+        title="🎯 Top High-Priority Traffic Locations",
+        hover_data={
+            "Risk Score": True,
+            "Priority Score": True,
+            "AI Recommended Deployment": True,
+            "location": False
+        }
+    )
+
+    fig.update_traces(
+        textposition="outside",
+        marker_line_width=1.5,
+        hovertemplate=(
+            "<b>%{y}</b><br>"
+            "Priority Score: %{x:.2f}<br>"
+            "Risk Score: %{customdata[0]:.2f}<br>"
+            "AI Recommended Deployment: %{customdata[1]}<extra></extra>"
+        )
+    )
+
+    fig.update_layout(
+        height=550,
+        template="plotly_white",
+        xaxis_title="AI Priority Score",
+        yaxis_title="Location",
+        showlegend=False,
+        margin=dict(
+            l=40,
+            r=80,
+            t=80,
+            b=40
+        ),
+        transition={
+            "duration": 900,
+            "easing": "cubic-in-out"
+        }
+    )
+
+    st.plotly_chart(
+        fig,
+        width="stretch"
+    )
+
+else:
+
+    st.info(
+        "AI deployment priority data is not available."
+    )
+
+
+st.divider()
+
+
+# ============================================================
+# AI PRIORITY ALERT
+# ============================================================
+
+if (
+    deployment_result is not None
+    and not deployment_result.empty
+    and "priority_score" in deployment_result.columns
+):
+
+    top_priority = (
+        deployment_result
+        .sort_values(
+            "priority_score",
+            ascending=False
+        )
+        .iloc[0]
+    )
+
+    top_location = str(
+        top_priority.get(
+            "location",
+            "Unknown Location"
+        )
+    )
+
+    top_priority_score = float(
+        top_priority.get(
+            "priority_score",
+            0
+        )
+    )
+
+    top_risk_score = float(
+        top_priority.get(
+            "risk_score",
+            0
+        )
+    )
+
+    top_risk_level = str(
+        top_priority.get(
+            "risk_level",
+            "UNKNOWN"
+        )
+    )
+
+    top_officers = int(
+        top_priority.get(
+            "recommended_officers",
+            0
+        )
+    )
+
+    st.subheader("🚨 AI Priority Alert")
+
+    st.warning(
+        f"""
+        ### 🎯 Highest Priority Location: {top_location}
+
+        **Priority Score:** {top_priority_score:.2f}
+
+        **Traffic Risk:** {top_risk_score:.2f} ({top_risk_level})
+
+        **AI Recommended Deployment:** {top_officers}
+
+        The AI Traffic Brain identifies **{top_location}** as the
+        highest-priority location for traffic intervention based on
+        the current risk and deployment priority calculations.
+        """
+    )
+
+
+st.divider()
 
 
 # ============================================================
@@ -1197,14 +1394,14 @@ if (
     with col1:
 
         st.metric(
-            "👮 Available Officers",
+            "👮 Available Traffic Police",
             available_officers
         )
 
     with col2:
 
         st.metric(
-            "🚓 Recommended Deployment",
+            "🚓 AI Recommended Deployment",
             total_deployed
         )
 
@@ -1272,6 +1469,13 @@ if (
         )
     )
 
+    current_police = int(
+        top_location.get(
+            "police_officers",
+            0
+        )
+    )
+
     recommended = int(
         top_location.get(
             "recommended_officers",
@@ -1301,7 +1505,7 @@ if (
     # Explanation metrics
     # --------------------------------------------------------
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
 
     with col1:
 
@@ -1320,7 +1524,14 @@ if (
     with col3:
 
         st.metric(
-            "👮 Recommended Police",
+            "👮 Current Police",
+            current_police
+        )
+
+    with col4:
+
+        st.metric(
+            "🚓 AI Recommended Deployment",
             recommended
         )
 
@@ -1345,9 +1556,10 @@ if (
         The location is currently classified as
         **{risk_level} risk**.
 
-        Based on these factors, the system recommends
-        deploying **{recommended} traffic police personnel**
-        to this location.
+        Based on these factors, the AI recommends
+        deploying **{recommended} additional traffic police
+        personnel** to this location from the available
+        deployment pool.
         """
     )
 
@@ -1385,7 +1597,7 @@ with st.expander(
 
     st.dataframe(
         df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True
     )
 
