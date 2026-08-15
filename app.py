@@ -600,35 +600,51 @@ if (
         zoom_start=11
     )
 
-    for _, row in df.iterrows():
+    # Use simulated traffic data when an incident simulation exists.
+    # Otherwise use the original dataset.
+    map_df = st.session_state.get(
+        "simulated_df",
+        df
+    )
+
+    for _, row in map_df.iterrows():
 
         risk = float(
             row["risk_score"]
         )
 
-        if risk >= 80:
+        # ====================================================
+        # AI RISK MAP COLOR
+        # ====================================================
+
+        risk_level = str(
+            row.get(
+                "risk_level",
+                "MODERATE"
+            )
+        ).upper()
+
+        if risk_level == "CRITICAL":
 
             marker_color = "red"
 
-        elif risk >= 60:
+        elif risk_level == "HIGH":
 
             marker_color = "orange"
 
-        else:
+        elif risk_level == "MODERATE":
 
             marker_color = "green"
+
+        else:
+
+            marker_color = "blue"
+
 
         location_name = str(
             row.get(
                 "location",
                 "Unknown"
-            )
-        )
-
-        risk_level = str(
-            row.get(
-                "risk_level",
-                "N/A"
             )
         )
 
