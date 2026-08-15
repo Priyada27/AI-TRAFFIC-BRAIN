@@ -303,6 +303,60 @@ st.divider()
 
 
 # ============================================================
+# OPERATIONAL TRAFFIC STATUS
+# ============================================================
+
+st.subheader("🚦 Operational Traffic Status")
+
+if "traffic_density" in df.columns:
+
+    average_density = df["traffic_density"].mean()
+
+    maximum_density = df["traffic_density"].max()
+
+else:
+
+    average_density = 0
+    maximum_density = 0
+
+
+if "avg_speed" in df.columns:
+
+    average_speed = df["avg_speed"].mean()
+
+else:
+
+    average_speed = 0
+
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+
+    st.metric(
+        "🚗 Average Traffic Density",
+        f"{average_density:.1f}%"
+    )
+
+with col2:
+
+    st.metric(
+        "🔴 Maximum Traffic Density",
+        f"{maximum_density:.1f}%"
+    )
+
+with col3:
+
+    st.metric(
+        "🏎️ Average Speed",
+        f"{average_speed:.1f}"
+    )
+
+
+st.divider()
+
+
+# ============================================================
 # HIGHEST RISK LOCATIONS
 # ============================================================
 
