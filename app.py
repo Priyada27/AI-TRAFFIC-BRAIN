@@ -214,6 +214,31 @@ else:
     critical_count = 0
     high_count = 0
 
+# ============================================================
+# OPERATIONAL KPI CALCULATIONS
+# ============================================================
+
+if "current_incidents" in df.columns:
+
+    active_incidents = int(
+        (df["current_incidents"] > 0).sum()
+    )
+
+else:
+
+    active_incidents = 0
+
+
+if "police_officers" in df.columns:
+
+    total_police_officers = int(
+        df["police_officers"].sum()
+    )
+
+else:
+
+    total_police_officers = 0
+
 
 # ============================================================
 # TRAFFIC RISK OVERVIEW
@@ -221,7 +246,7 @@ else:
 
 st.subheader("📊 Traffic Risk Overview")
 
-col1, col2, col3, col4, col5 = st.columns(5)
+col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
 
 with col1:
 
@@ -256,6 +281,21 @@ with col5:
     st.metric(
         "🔴 Critical",
         critical_count
+    )
+
+with col6:
+
+    st.metric(
+        "🚨 Active Incidents",
+        active_incidents
+    )
+
+
+with col7:
+
+    st.metric(
+        "👮 Police Officers",
+        total_police_officers
     )
 
 
