@@ -1204,9 +1204,21 @@ if (
         .copy()
     )
 
-    chart_data = chart_data.sort_values(
-        "priority_score",
-        ascending=True
+    # --------------------------------------------------------
+    # Add AI ranking
+    # --------------------------------------------------------
+
+    chart_data["Rank"] = range(
+        1,
+        len(chart_data) + 1
+    )
+
+    chart_data["Rank Label"] = chart_data["Rank"].map(
+        lambda rank:
+            "🥇" if rank == 1
+            else "🥈" if rank == 2
+            else "🥉" if rank == 3
+            else f"#{rank}"
     )
 
     chart_data["Risk Score"] = chart_data[
@@ -1221,29 +1233,35 @@ if (
         "recommended_officers"
     ].astype(int)
 
+    # Reverse for highest priority at the top
+    chart_data = chart_data.sort_values(
+        "Priority Score",
+        ascending=True
+    )
+
     fig = px.bar(
         chart_data,
         x="Priority Score",
         y="location",
         orientation="h",
         text="Priority Score",
-        title="🎯 Top High-Priority Traffic Locations",
-        hover_data={
-            "Risk Score": True,
-            "Priority Score": True,
-            "AI Recommended Deployment": True,
-            "location": False
-        }
+        custom_data=[
+            "Risk Score",
+            "AI Recommended Deployment",
+            "Rank Label"
+        ],
+        title="🎯 Top High-Priority Traffic Locations"
     )
 
     fig.update_traces(
         textposition="outside",
         marker_line_width=1.5,
         hovertemplate=(
-            "<b>%{y}</b><br>"
-            "Priority Score: %{x:.2f}<br>"
-            "Risk Score: %{customdata[0]:.2f}<br>"
-            "AI Recommended Deployment: %{customdata[1]}<extra></extra>"
+            "<b>%{customdata[2]} %{y}</b><br>"
+            "AI Priority Score: %{x:.2f}<br>"
+            "Traffic Risk: %{customdata[0]:.2f}<br>"
+            "AI Recommended Deployment: "
+            "%{customdata[1]}<extra></extra>"
         )
     )
 
@@ -1255,7 +1273,7 @@ if (
         showlegend=False,
         margin=dict(
             l=40,
-            r=80,
+            r=100,
             t=80,
             b=40
         ),
@@ -1272,7 +1290,7 @@ if (
 
 else:
 
-    st.info(
+    st.warning(
         "AI deployment priority data is not available."
     )
 
@@ -1280,83 +1298,6 @@ else:
 st.divider()
 
 
-# ============================================================
-# AI PRIORITY ALERT
-# ============================================================
-
-if (
-    deployment_result is not None
-    and not deployment_result.empty
-    and "priority_score" in deployment_result.columns
-):
-
-    top_priority = (
-        deployment_result
-        .sort_values(
-            "priority_score",
-            ascending=False
-        )
-        .iloc[0]
-    )
-
-    top_location = str(
-        top_priority.get(
-            "location",
-            "Unknown Location"
-        )
-    )
-
-    top_priority_score = float(
-        top_priority.get(
-            "priority_score",
-            0
-        )
-    )
-
-    top_risk_score = float(
-        top_priority.get(
-            "risk_score",
-            0
-        )
-    )
-
-    top_risk_level = str(
-        top_priority.get(
-            "risk_level",
-            "UNKNOWN"
-        )
-    )
-
-    top_officers = int(
-        top_priority.get(
-            "recommended_officers",
-            0
-        )
-    )
-
-    st.subheader("🚨 AI Priority Alert")
-
-    st.warning(
-        f"""
-        ### 🎯 Highest Priority Location: {top_location}
-
-        **Priority Score:** {top_priority_score:.2f}
-
-        **Traffic Risk:** {top_risk_score:.2f} ({top_risk_level})
-
-        **AI Recommended Deployment:** {top_officers}
-
-        The AI Traffic Brain identifies **{top_location}** as the
-        highest-priority location for traffic intervention based on
-        the current risk and deployment priority calculations.
-        """
-    )
-
-
-st.divider()
-
-
-# ============================================================
 # DEPLOYMENT SUMMARY
 # ============================================================
 
@@ -1389,7 +1330,7 @@ if (
     )
 
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
 
     with col1:
 
@@ -1406,6 +1347,13 @@ if (
         )
 
     with col3:
+
+        st.metric(
+            "🟢 Remaining Officers",
+            remaining_officers
+        )
+
+    with col4:
 
         st.metric(
             "📍 Locations Covered",
