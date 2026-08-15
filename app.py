@@ -27,43 +27,15 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-        .main {
-            padding-top: 1rem;
-        }
 
-        .block-container {
-            padding-top: 1.5rem;
-        }
+    .main {
+        padding-top: 1rem;
+    }
 
-        .metric-card {
-            background-color: #f8f9fa;
-            padding: 18px;
-            border-radius: 12px;
-            text-align: center;
-            border: 1px solid #e5e7eb;
-        }
+    .block-container {
+        padding-top: 1.5rem;
+    }
 
-        .risk-high {
-            color: #dc2626;
-            font-weight: bold;
-        }
-
-        .risk-medium {
-            color: #f59e0b;
-            font-weight: bold;
-        }
-
-        .risk-low {
-            color: #16a34a;
-            font-weight: bold;
-        }
-
-        .recommendation {
-            background-color: #fff7ed;
-            padding: 15px;
-            border-radius: 10px;
-            border-left: 5px solid #f97316;
-        }
     </style>
     """,
     unsafe_allow_html=True
@@ -80,10 +52,10 @@ st.markdown(
     """
     ### AI-Based Traffic Risk & Police Deployment Decision Support System
 
-    **AI Traffic Brain** continuously identifies where traffic risk is highest,
-    explains the major risk factors, and recommends how limited traffic
-    personnel should be deployed — while keeping the final decision with
-    the human authority.
+    **AI Traffic Brain** continuously identifies where traffic risk is
+    highest, explains why the risk is high, and recommends how limited
+    traffic personnel should be deployed — while keeping the final
+    decision with the human authority.
     """
 )
 
@@ -97,21 +69,27 @@ st.divider()
 DATA_PATH = "data/nagpur_traffic.csv"
 
 try:
+
     df = pd.read_csv(DATA_PATH)
 
 except FileNotFoundError:
+
     st.error(
         f"Dataset not found: `{DATA_PATH}`"
     )
 
     st.info(
-        "Make sure `nagpur_traffic.csv` exists inside the `data` folder."
+        "Make sure nagpur_traffic.csv exists inside the data folder."
     )
 
     st.stop()
 
 except Exception as e:
-    st.error(f"Error loading dataset: {e}")
+
+    st.error(
+        f"Error loading dataset: {e}"
+    )
+
     st.stop()
 
 
@@ -120,19 +98,25 @@ except Exception as e:
 # ============================================================
 
 try:
+
     df = add_risk_analysis(df)
 
 except Exception as e:
-    st.error("Risk Engine could not process the dataset.")
+
+    st.error(
+        "Risk Engine could not process the dataset."
+    )
+
     st.exception(e)
+
     st.stop()
 
 
 # ============================================================
-# BASIC DATA VALIDATION
+# REQUIRED COLUMN CHECK
 # ============================================================
 
-required_for_deployment = [
+required_columns = [
     "risk_score",
     "risk_level",
     "police_officers",
@@ -141,14 +125,14 @@ required_for_deployment = [
 
 missing_columns = [
     column
-    for column in required_for_deployment
+    for column in required_columns
     if column not in df.columns
 ]
 
 if missing_columns:
 
     st.warning(
-        "Some deployment columns are missing from the dataset:"
+        "The following columns are missing from the dataset:"
     )
 
     st.write(missing_columns)
@@ -161,7 +145,7 @@ if missing_columns:
 st.sidebar.title("🎛️ Traffic Control Panel")
 
 st.sidebar.markdown(
-    "Use the controls below to simulate traffic authority decisions."
+    "Simulate traffic authority decisions using the controls below."
 )
 
 available_officers = st.sidebar.slider(
@@ -174,13 +158,14 @@ available_officers = st.sidebar.slider(
 
 st.sidebar.divider()
 
-st.sidebar.subheader("📊 Dataset")
+st.sidebar.subheader("📊 Dataset Information")
 
 st.sidebar.write(
     f"Locations: **{len(df)}**"
 )
 
 if "risk_score" in df.columns:
+
     st.sidebar.write(
         f"Average Risk: **{df['risk_score'].mean():.2f}**"
     )
@@ -201,35 +186,35 @@ if "risk_score" in df.columns:
 else:
 
     average_risk = 0
+
     highest_risk = 0
 
 
 if "risk_level" in df.columns:
 
-    critical_count = (
+    risk_levels = (
         df["risk_level"]
         .astype(str)
         .str.upper()
-        .isin(["CRITICAL"])
-        .sum()
     )
 
+    critical_count = (
+        risk_levels == "CRITICAL"
+    ).sum()
+
     high_count = (
-        df["risk_level"]
-        .astype(str)
-        .str.upper()
-        .isin(["HIGH"])
-        .sum()
-    )
+        risk_levels == "HIGH"
+    ).sum()
 
 else:
 
     critical_count = 0
+
     high_count = 0
 
 
 # ============================================================
-# KPI DASHBOARD
+# TRAFFIC RISK OVERVIEW
 # ============================================================
 
 st.subheader("📊 Traffic Risk Overview")
@@ -237,30 +222,35 @@ st.subheader("📊 Traffic Risk Overview")
 col1, col2, col3, col4, col5 = st.columns(5)
 
 with col1:
+
     st.metric(
         "📍 Locations",
         total_locations
     )
 
 with col2:
+
     st.metric(
         "⚠️ Average Risk",
         f"{average_risk:.2f}"
     )
 
 with col3:
+
     st.metric(
         "🔴 Highest Risk",
         f"{highest_risk:.2f}"
     )
 
 with col4:
+
     st.metric(
         "🚨 High Risk",
         high_count
     )
 
 with col5:
+
     st.metric(
         "🔴 Critical",
         critical_count
@@ -271,19 +261,26 @@ st.divider()
 
 
 # ============================================================
-# TOP RISK LOCATIONS
+# HIGHEST RISK LOCATIONS
 # ============================================================
 
 st.subheader("🚨 Highest Traffic Risk Locations")
 
-if "risk_score" in df.columns and "location" in df.columns:
+if (
+    "risk_score" in df.columns
+    and "location" in df.columns
+):
 
-    top_risk = df.sort_values(
-        "risk_score",
-        ascending=False
-    ).head(10)
+    top_risk = (
+        df
+        .sort_values(
+            "risk_score",
+            ascending=False
+        )
+        .head(10)
+    )
 
-    display_columns = [
+    risk_display_columns = [
         column
         for column in [
             "location",
@@ -298,14 +295,16 @@ if "risk_score" in df.columns and "location" in df.columns:
     ]
 
     st.dataframe(
-        top_risk[display_columns],
+        top_risk[
+            risk_display_columns
+        ],
         use_container_width=True,
         hide_index=True
     )
 
 else:
 
-    st.info(
+    st.warning(
         "Risk/location columns are not available."
     )
 
@@ -326,6 +325,7 @@ if (
 ):
 
     center_lat = df["latitude"].mean()
+
     center_lon = df["longitude"].mean()
 
     traffic_map = folium.Map(
@@ -338,21 +338,40 @@ if (
 
     for _, row in df.iterrows():
 
-        risk = float(row["risk_score"])
+        risk = float(
+            row["risk_score"]
+        )
 
         if risk >= 80:
+
             marker_color = "red"
 
         elif risk >= 60:
+
             marker_color = "orange"
 
         else:
+
             marker_color = "green"
 
-        popup_text = f"""
-        <b>{row.get('location', 'Unknown')}</b><br>
+        location_name = str(
+            row.get(
+                "location",
+                "Unknown"
+            )
+        )
+
+        risk_level = str(
+            row.get(
+                "risk_level",
+                "N/A"
+            )
+        )
+
+        popup_html = f"""
+        <b>{location_name}</b><br>
         Risk Score: {risk:.2f}<br>
-        Risk Level: {row.get('risk_level', 'N/A')}
+        Risk Level: {risk_level}
         """
 
         folium.CircleMarker(
@@ -366,7 +385,7 @@ if (
             fill_color=marker_color,
             fill_opacity=0.75,
             popup=folium.Popup(
-                popup_text,
+                popup_html,
                 max_width=300
             )
         ).add_to(traffic_map)
@@ -380,7 +399,7 @@ if (
 else:
 
     st.warning(
-        "Latitude/longitude columns are not available in the dataset, "
+        "Latitude/longitude columns are not available, "
         "so the map cannot be displayed."
     )
 
@@ -389,20 +408,22 @@ st.divider()
 
 
 # ============================================================
-# POLICE DEPLOYMENT ENGINE
+# AI POLICE DEPLOYMENT ENGINE
 # ============================================================
 
 st.header("👮 AI Police Deployment")
 
 st.markdown(
     """
-    The deployment engine prioritizes high-risk locations and recommends
-    where limited traffic police personnel should be deployed.
+    The AI Deployment Engine prioritizes locations according to
+    traffic risk, police coverage gap, and current incidents.
+    It then recommends how limited police personnel should be
+    distributed.
     """
 )
 
 st.info(
-    f"Currently available traffic police personnel: "
+    f"👮 Currently Available Traffic Police: "
     f"**{available_officers}**"
 )
 
@@ -420,6 +441,8 @@ deployment_columns_available = all(
     ]
 )
 
+deployment_result = None
+
 if deployment_columns_available:
 
     try:
@@ -429,7 +452,9 @@ if deployment_columns_available:
             available_officers
         )
 
-        st.subheader("🚨 Recommended Deployment")
+        st.subheader(
+            "🚨 Recommended Police Deployment"
+        )
 
         deployment_display_columns = [
             column
@@ -462,8 +487,8 @@ if deployment_columns_available:
 else:
 
     st.warning(
-        "Deployment cannot be calculated because required columns "
-        "are missing from the dataset."
+        "Police deployment cannot be calculated because "
+        "required dataset columns are missing."
     )
 
 
@@ -472,11 +497,13 @@ else:
 # ============================================================
 
 if (
-    deployment_columns_available
-    and "deployment_result" in locals()
+    deployment_result is not None
+    and not deployment_result.empty
 ):
 
-    st.subheader("📌 Deployment Summary")
+    st.subheader(
+        "📌 Deployment Summary"
+    )
 
     total_deployed = int(
         deployment_result[
@@ -489,111 +516,262 @@ if (
         0
     )
 
+    deployment_locations = (
+        deployment_result[
+            "recommended_officers"
+        ] > 0
+    ).sum()
+    
     col1, col2, col3 = st.columns(3)
 
     with col1:
 
         st.metric(
-            "👮 Available",
+            "👮 Available Officers",
             available_officers
         )
 
     with col2:
 
         st.metric(
-            "🚓 Recommended",
+            "🚓 Recommended Deployment",
             total_deployed
         )
 
     with col3:
 
         st.metric(
-            "🟢 Remaining",
-            remaining_officers
+            "📍 Locations Covered",
+            deployment_locations
         )
 
 
-# ============================================================
-# DECISION SUPPORT EXPLANATION
-# ============================================================
-
 st.divider()
 
-st.subheader("🧠 AI Decision Explanation")
+
+# ============================================================
+# AI DECISION EXPLANATION
+# ============================================================
+
+st.subheader(
+    "🧠 AI Decision Explanation"
+)
+
 
 if (
-    deployment_columns_available
-    and "deployment_result" in locals()
+    deployment_result is not None
+    and not deployment_result.empty
 ):
 
-    top_location = deployment_result.iloc[0]
+    # --------------------------------------------------------
+    # Find highest priority location
+    # --------------------------------------------------------
 
-    location_name = top_location.get(
-        "location",
-        "Unknown location"
+    top_location = (
+        deployment_result
+        .sort_values(
+            "priority_score",
+            ascending=False
+        )
+        .iloc[0]
     )
 
-    risk_value = top_location.get(
-        "risk_score",
-        0
+
+    # --------------------------------------------------------
+    # Extract values safely
+    # --------------------------------------------------------
+
+    location_name = str(
+        top_location.get(
+            "location",
+            "Unknown Location"
+        )
     )
 
-    priority_value = top_location.get(
-        "priority_score",
-        0
+    risk_value = float(
+        top_location.get(
+            "risk_score",
+            0
+        )
     )
 
-    recommended = top_location.get(
-        "recommended_officers",
-        0
+    priority_value = float(
+        top_location.get(
+            "priority_score",
+            0
+        )
     )
+
+    recommended = int(
+        top_location.get(
+            "recommended_officers",
+            0
+        )
+    )
+
+    risk_level = str(
+        top_location.get(
+            "risk_level",
+            "UNKNOWN"
+        )
+    )
+
+
+    # --------------------------------------------------------
+    # Main recommendation
+    # --------------------------------------------------------
+
+    st.success(
+        f"🎯 **Highest Deployment Priority: "
+        f"{location_name}**"
+    )
+
+
+    # --------------------------------------------------------
+    # Explanation metrics
+    # --------------------------------------------------------
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+
+        st.metric(
+            "⚠️ Traffic Risk",
+            f"{risk_value:.2f}"
+        )
+
+    with col2:
+
+        st.metric(
+            "🎯 Priority Score",
+            f"{priority_value:.2f}"
+        )
+
+    with col3:
+
+        st.metric(
+            "👮 Recommended Police",
+            recommended
+        )
+
+
+    # --------------------------------------------------------
+    # Explanation
+    # --------------------------------------------------------
 
     st.markdown(
-        f"""
-        <div class="recommendation">
-
-        <b>Highest deployment priority:</b>
-        {location_name}
-
-        <br><br>
-
-        <b>Risk Score:</b>
-        {risk_value:.2f}
-
-        <br>
-
-        <b>Priority Score:</b>
-        {priority_value:.2f}
-
-        <br>
-
-        <b>Recommended Police:</b>
-        {recommended}
-
-        <br><br>
-
-        <b>Reason:</b>
-        This location has a high calculated traffic risk and therefore
-        receives higher deployment priority.
-
-        </div>
-        """,
-        unsafe_allow_html=True
+        "### 🔍 Why did the AI select this location?"
     )
+
+    st.write(
+        f"""
+        **{location_name}** has been identified as the
+        highest deployment priority by the AI Traffic Brain.
+
+        The system calculated a **traffic risk score of
+        {risk_value:.2f}** and a **deployment priority score
+        of {priority_value:.2f}**.
+
+        The location is currently classified as
+        **{risk_level} risk**.
+
+        Based on these factors, the system recommends
+        deploying **{recommended} traffic police personnel**
+        to this location.
+        """
+    )
+
+
+    # --------------------------------------------------------
+    # Human authority statement
+    # --------------------------------------------------------
+
+    st.info(
+        "👤 **Human Authority:** "
+        "The AI recommendation is decision support only. "
+        "The authorized traffic authority retains the final "
+        "decision to accept, modify, or reject the deployment."
+    )
+
+
+else:
+
+    st.warning(
+        "⚠️ AI decision explanation is currently unavailable "
+        "because deployment results could not be calculated."
+    )
+
+
+st.divider()
 
 
 # ============================================================
 # DATA EXPLORER
 # ============================================================
 
-st.divider()
-
-with st.expander("📋 View Traffic Dataset"):
+with st.expander(
+    "📋 View Complete Traffic Dataset"
+):
 
     st.dataframe(
         df,
         use_container_width=True,
         hide_index=True
+    )
+
+
+# ============================================================
+# PROJECT WORKFLOW
+# ============================================================
+
+with st.expander(
+    "⚙️ How AI Traffic Brain Works"
+):
+
+    st.markdown(
+        """
+        ### AI Traffic Brain Workflow
+
+        **1. Traffic Data**
+
+        Traffic conditions, incidents, police availability,
+        location and other parameters are collected.
+
+        ↓
+
+        **2. Risk Engine**
+
+        The system calculates a traffic risk score for
+        every monitored location.
+
+        ↓
+
+        **3. Risk Classification**
+
+        Locations are classified into risk levels such as
+        LOW, MODERATE, HIGH and CRITICAL.
+
+        ↓
+
+        **4. Deployment Engine**
+
+        The system considers risk, police coverage and
+        current incidents to calculate deployment priority.
+
+        ↓
+
+        **5. Police Recommendation**
+
+        Limited traffic personnel are distributed to the
+        highest-priority locations.
+
+        ↓
+
+        **6. Human Decision**
+
+        The final decision remains with the authorized
+        traffic authority.
+        """
     )
 
 
@@ -604,10 +782,10 @@ with st.expander("📋 View Traffic Dataset"):
 st.divider()
 
 st.caption(
-    "🚦 AI Traffic Brain"
+    "🚦 AI Traffic Brain "
 )
 
 st.caption(
-    "AI provides recommendations. Final deployment decisions remain "
-    "with authorized human traffic authorities."
+    "AI provides recommendations. Final deployment decisions "
+    "remain with authorized human traffic authorities."
 )
