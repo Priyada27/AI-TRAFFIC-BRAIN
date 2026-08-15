@@ -604,7 +604,7 @@ with st.expander("📋 View Traffic Dataset"):
 st.divider()
 
 st.caption(
-    "🚦 AI Traffic Brain | Vikasit Nagpur Hackathon 2026"
+    "🚦 AI Traffic Brain"
 )
 
 st.caption(
