@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import folium
+import plotly.express as px
 
 from streamlit_folium import st_folium
 
@@ -350,6 +351,88 @@ with col3:
     st.metric(
         "📈 Average Peak Activity",
         f"{average_peak_activity:.1f}%"
+    )
+
+
+st.divider()
+
+
+# ============================================================
+# TRAFFIC RISK DISTRIBUTION
+# ============================================================
+
+st.subheader("📊 Traffic Risk Distribution")
+
+if "risk_level" in df.columns:
+
+    risk_distribution = (
+        df["risk_level"]
+        .astype(str)
+        .str.upper()
+        .value_counts()
+        .reindex(
+            ["CRITICAL", "HIGH", "MODERATE"],
+            fill_value=0
+        )
+        .reset_index()
+    )
+
+    risk_distribution.columns = [
+        "Risk Level",
+        "Locations"
+    ]
+
+    fig = px.bar(
+        risk_distribution,
+        x="Risk Level",
+        y="Locations",
+        text="Locations",
+        title="Traffic Risk Level Distribution",
+        category_orders={
+            "Risk Level": [
+                "CRITICAL",
+                "HIGH",
+                "MODERATE"
+            ]
+        }
+    )
+
+    fig.update_traces(
+        textposition="outside",
+        marker_line_width=1.5,
+        hovertemplate=(
+            "<b>%{x}</b><br>"
+            "Locations: %{y}<extra></extra>"
+        )
+    )
+
+    fig.update_layout(
+        height=450,
+        template="plotly_white",
+        xaxis_title="Risk Level",
+        yaxis_title="Number of Locations",
+        showlegend=False,
+        margin=dict(
+            l=40,
+            r=40,
+            t=80,
+            b=40
+        ),
+        transition={
+            "duration": 800,
+            "easing": "cubic-in-out"
+        }
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+
+else:
+
+    st.warning(
+        "Risk level data is not available."
     )
 
 
