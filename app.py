@@ -302,6 +302,76 @@ st.divider()
 
 
 # ============================================================
+# LIVE AI TRAFFIC STATUS
+# ============================================================
+
+# Determine the overall traffic condition using multiple
+# network-level AI indicators.
+
+if (
+    critical_count > 0
+    or average_risk >= 70
+):
+    traffic_status = "🚨 CRITICAL"
+    traffic_status_message = (
+        "Critical traffic conditions detected. "
+        "Immediate traffic intervention may be required."
+    )
+
+elif (
+    highest_risk >= 70
+    or high_count >= 5
+):
+    traffic_status = "🔴 HIGH"
+    traffic_status_message = (
+        "Elevated traffic risk detected across multiple locations. "
+        "Increased monitoring and police deployment may be required."
+    )
+
+elif average_risk >= 50:
+    traffic_status = "🟡 MODERATE"
+    traffic_status_message = (
+        "Moderate traffic risk detected. "
+        "Traffic conditions should be actively monitored."
+    )
+
+else:
+    traffic_status = "🟢 NORMAL"
+    traffic_status_message = (
+        "Traffic conditions are currently stable."
+    )
+
+
+st.subheader("🧠 Live AI Traffic Status")
+
+status_col1, status_col2 = st.columns([1, 3])
+
+with status_col1:
+
+    st.metric(
+        "Current Traffic Status",
+        traffic_status
+    )
+
+with status_col2:
+
+    st.info(
+        f"""
+        **AI Assessment:** {traffic_status_message}
+
+        Average Risk: **{average_risk:.2f}** |
+        Highest Risk: **{highest_risk:.2f}** |
+        High-Risk Locations: **{high_count}** |
+        Critical Locations: **{critical_count}** |
+        Active Incidents: **{active_incidents}**
+        """
+    )
+
+
+st.divider()
+
+
+# ============================================================
 # OPERATIONAL TRAFFIC STATUS
 # ============================================================
 
